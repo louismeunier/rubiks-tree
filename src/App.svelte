@@ -130,6 +130,23 @@ function onNodeClick(
   resizable={false}
 />
 <div>
+  <button on:click={async () => {
+    initialNodes = [
+      {
+        id: 1,
+        position: { x: width/2, y: -height/2 },
+        data: { html: twizzleWrapper("", selectedPuzzle), state: "" },
+        width: 40,
+        height: 40,
+        borderColor: "transparent",
+        borderRadius: 1000,
+        bgColor: "transparent",
+        clickCallback: () => { onNodeClick("", {x: width/2, y: -height/2}, 1) }
+      }
+    ];
+    initialEdges = [];
+    id_count = 1;
+  }}>reset</button>
 <button on:click={async () => {
   const scramble = (await randomScrambleForEvent("333")).toString();
   initialNodes = [
@@ -147,7 +164,7 @@ function onNodeClick(
   ];
   initialEdges = [];
   id_count = 1;
-}}>reset</button>
+}}>scramble</button>
 <em>states explored: {initialNodes.length}</em>
 <select bind:value="{selectedPuzzle}">
   <option value="3x3x3">3x3</option>
