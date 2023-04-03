@@ -1,0 +1,3 @@
+- fix positioning of cubes (too much overlap, impossible to read)
+- add pathing? edge that you "follow" gets colored?
+- solver
