@@ -2,20 +2,22 @@
   import Svelvet from "svelvet";
   import { cube3x3x3 } from "cubing/puzzles";
   import { randomScrambleForEvent } from "cubing/scramble";
+  //! fix alg labels
+
+  import { computePosition, MOVES, twizzleWrapper, Puzzle, MOVES_REGEX } from "./helpers";
+  import type { CubeNode } from "./helpers";
+  import {experimentalSolve3x3x3IgnoringCenters} from "cubing/search";
 
   let kpuzz;
   (async() => {
     kpuzz = await cube3x3x3.kpuzzle();
   })()
 
-  //! fix alg labels
-  // don't let nodes be clicked twice
 
-  import { computePosition, MOVES, twizzleWrapper, Puzzle } from "./helpers";
 
   const RADIUS = 50
   
-  let height = document.documentElement.clientHeight - 50;
+  let height = document.documentElement.clientHeight;
   let width = document.documentElement.clientWidth;
   
   let id_count = 1;
@@ -23,15 +25,15 @@
   let selectedPuzzle:Puzzle;
 
   let INITIAL_STATE = "";
-  (async ()=>{INITIAL_STATE = await (await randomScrambleForEvent("333")).toString()})()
+  // (async ()=>{INITIAL_STATE = await (await randomScrambleForEvent("333")).toString()})()
 
   // reload if above changes
   window.addEventListener("resize", () => {
-    height = document.documentElement.clientHeight - 50;
+    height = document.documentElement.clientHeight;
     width = document.documentElement.clientWidth;
   });
 
-  let initialNodes = [
+  let initialNodes:CubeNode[] = [
 	  {
       id: 1,
       position: { x: width/2, y: -height/2 },
@@ -41,10 +43,7 @@
       borderColor: "transparent",
       bgColor: "transparent",
       borderRadius: 1000,
-      clickCallback: node => { 
-        !node.data.clicked && onNodeClick("", {x: width/2, y: -height/2}, 1);
-        node.data.clicked = true;
-      }
+      clickCallback: onNodeClick
     }
 	];
 
@@ -53,10 +52,15 @@
 
 
 function onNodeClick(
-  prev: string, 
-  prevPosition: {x: number, y: number}, 
-  prevId: number
+  node
 ) {
+  const prev = node.data.state;
+  const prevPosition = { x: node.positionX, y: node.positionY };
+  const prevId = node.id;
+
+  if (node.data.clicked) return;
+  node.data.clicked = true;
+
   let newNodes = [];
   let newEdges = [];
   MOVES.forEach((move, pos) => {
@@ -76,31 +80,24 @@ function onNodeClick(
               labelBgColor: "transparent",
               labelTextColor: "red",
               type: "bezier",
-              arrow: true
+              arrow: false
             }
           ]
         } else {
+            const newPosition = computePosition(prevPosition, RADIUS, pos*Math.PI/6);
             id_count++;
             const newId = id_count;
             newNodes = [
             ...newNodes, 
             {
               id: newId,
-              position: computePosition(prevPosition, RADIUS, (pos+1)*Math.PI/6),
+              position: newPosition,
               data: { html: twizzleWrapper(prev + " " + move, selectedPuzzle), state: prev + " " + move, clicked: false },
               width: 40,
               height: 40,
               bgColor: "transparent",
               borderColor: "transparent",
-              // borderRadius: 1000,
-              clickCallback: node => {
-                !node.data.clicked && onNodeClick(
-                  prev + " " + move, 
-                  computePosition(prevPosition, RADIUS, (pos+1)*Math.PI/6), 
-                  newId
-                )
-                node.data.clicked = true;
-              }
+              clickCallback: onNodeClick
             }
           ]
           newEdges = [
@@ -110,7 +107,7 @@ function onNodeClick(
               labelBgColor: "transparent",
               labelTextColor: "red",
               type: "bezier",
-              arrow: true
+              arrow: false
             }
           ]
         } 
@@ -121,20 +118,21 @@ function onNodeClick(
 }
 
 // for input form
-let INPUT_VALUE: string;
+let INPUT_VALUE: string = INITIAL_STATE;
+$: INPUT_VALUE = INITIAL_STATE;
 
-async function reset () {
+async function reset (initialState: string) {
     initialNodes = [
       {
         id: 1,
         position: { x: width/2, y: -height/2 },
-        data: { html: twizzleWrapper("", selectedPuzzle), state: "", clicked: false },
+        data: { html: twizzleWrapper(initialState, selectedPuzzle), state: initialState, clicked: false },
         width: 40,
         height: 40,
         borderColor: "transparent",
         borderRadius: 1000,
         bgColor: "transparent",
-        clickCallback: node => { !node.data.clicked && onNodeClick("", {x: width/2, y: -height/2}, 1); node.data.clicked = true; }
+        clickCallback: onNodeClick
       }
     ];
     initialEdges = [];
@@ -143,6 +141,7 @@ async function reset () {
 
 async function genScramble() {
   const scramble = (await randomScrambleForEvent("333")).toString();
+  INITIAL_STATE = scramble;
   initialNodes = [
     {
       id: 1,
@@ -153,7 +152,7 @@ async function genScramble() {
       borderColor: "transparent",
       borderRadius: 1000,
       bgColor: "transparent",
-      clickCallback: node => { !node.data.clicked && onNodeClick(scramble, {x: width/2, y: -height/2}, 1); node.data.clicked = true; }
+      clickCallback: onNodeClick
     }
   ];
   initialEdges = [];
@@ -172,16 +171,37 @@ async function genScramble() {
   resizable={false}
 />
 <div class="controls">
-  <button on:click={reset}>reset</button>
+  <button on:click={()=>reset("")}>reset</button>
   <button on:click={genScramble}>scramble</button>
-  <select bind:value="{selectedPuzzle}" on:change={reset}>
-    <option value="3x3x3">3x3</option>
+  <select bind:value="{selectedPuzzle}" on:change={()=>reset("")}>
+    <option value="" disabled >select puzzle</option>
+    <option value="3x3x3" selected>3x3</option>
     <option value="2x2x2">2x2</option>
   </select>
   <!-- <em>{selectedPuzzle}</em> -->
-  <div>
+  <span>scramble:</span>
+  <div class="scr">
     <textarea bind:value="{INPUT_VALUE}"></textarea>
-    <button>submit!</button>
+    <div class="scr-controls">
+      <button on:click={() => {
+        // check if input value contains valid moves, R, R', U', U, etc
+        if (INPUT_VALUE.match(MOVES_REGEX)) {
+          reset(INPUT_VALUE);
+        } else {
+          // make not an alert later, red border perhaps
+          alert("invalid scramble");
+          INPUT_VALUE = "";
+        }
+      }}>set</button>
+      <button on:click={async () => {
+          const solveP = await experimentalSolve3x3x3IgnoringCenters(kpuzz.algToTransformation(INPUT_VALUE).toKState());
+          let solve = solveP.toString();
+          MOVES.forEach(m => {
+            solve = solve.replaceAll(`${m}2`, `${m} ${m}`)
+          })
+          console.log(solve);
+      }}>solve</button>
+    </div>
   </div>
   
 </div>
@@ -218,9 +238,24 @@ async function genScramble() {
     padding: 10px;
     border-radius: 10px;
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    display: grid;
+    /* display: grid; */
+    display: flex;
+    flex-direction: column;
+    gap: 0.1em;
     /* grid-auto-flow: column; */
     text-align: center;
+  }
+
+  .scr {
+    display: flex;
+    flex-direction: row;
+    gap: 0.1em;
+  }
+
+  .scr-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1em;
   }
 
   .meta {
@@ -232,7 +267,6 @@ async function genScramble() {
     padding: 10px;
     border-radius: 10px;
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    display: grid;
     text-align: center;
   }
 </style>
